@@ -14,38 +14,83 @@
  * Иногда промисы от API будут приходить в состояние rejected, (прямо как и API в реальной жизни)
  * Ответ будет приходить в поле {result}
  */
- import Api from '../tools/api';
+import {
+    __,
+    allPass,
+    gte,
+    ifElse,
+    length,
+    lte,
+    pipe,
+    prop,
+    split,
+    tap,
+    test,
+} from "ramda";
+import Api from "../tools/api";
 
- const api = new Api();
+const api = new Api();
 
- /**
-  * Я – пример, удали меня
-  */
- const wait = time => new Promise(resolve => {
-     setTimeout(resolve, time);
- })
+const isValidLength = allPass([
+    pipe(length, gte(__, 3)),
+    pipe(length, lte(__, 9)),
+]);
 
- const processSequence = ({value, writeLog, handleSuccess, handleError}) => {
-     /**
-      * Я – пример, удали меня
-      */
-     writeLog(value);
+const containsOnlyDigitsAndPoint = test(/^[0-9.]+$/);
 
-     api.get('https://api.tech/numbers/base', {from: 2, to: 10, number: '01011010101'}).then(({result}) => {
-         writeLog(result);
-     });
+const hasSinglePoint = pipe(split("."), length, lte(__, 2));
 
-     wait(2500).then(() => {
-         writeLog('SecondLog')
+const isPositive = pipe(parseFloat, (num) => !isNaN(num) && num > 0);
 
-         return wait(1500);
-     }).then(() => {
-         writeLog('ThirdLog');
+const isInputValid = allPass([
+    isValidLength,
+    containsOnlyDigitsAndPoint,
+    hasSinglePoint,
+    isPositive,
+]);
 
-         return wait(400);
-     }).then(() => {
-         handleSuccess('Done');
-     });
- }
+const roundValue = Math.round;
+const squareValue = (x) => x * x;
+
+const fetchBinaryForm = (number) =>
+    api
+        .get("https://api.tech/numbers/base ")({
+            from: 10,
+            to: 2,
+            number,
+        })
+        .then(prop("result"));
+
+const fetchAnimalById = (id) =>
+    api.get("https://animals.tech/ ")({ id }).then(prop("result"));
+
+const processSequence = ({ value, writeLog, handleSuccess, handleError }) => {
+    const log = tap(writeLog);
+    const onApiError = () => handleError("APIError");
+
+    pipe(
+        log,
+        ifElse(
+            isInputValid,
+            (inputValue) => {
+                const roundedValue = roundValue(parseFloat(inputValue));
+                writeLog(roundedValue);
+
+                fetchBinaryForm(roundedValue)
+                    .then(log)
+                    .then((binaryString) => binaryString.length)
+                    .then(log)
+                    .then(squareValue)
+                    .then(log)
+                    .then((squaredLength) => squaredLength % 3)
+                    .then(log)
+                    .then(fetchAnimalById)
+                    .then(handleSuccess)
+                    .catch(onApiError);
+            },
+            () => handleError("ValidationError")
+        )
+    )(value);
+};
 
 export default processSequence;
